@@ -98,7 +98,9 @@ impl ServiceCore<RuntimeServiceId> for RecoveringService {
 
     async fn run(mut self) -> Result<(), DynError> {
         while let Some(sender) = self.resources.inbound_relay.recv().await {
-            sender.send(()).unwrap();
+            sender
+                .send(())
+                .map_err(|()| "recovery reply receiver was dropped")?;
         }
         Ok(())
     }
