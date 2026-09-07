@@ -739,27 +739,34 @@ fn generate_stop_sequence_impl(
 /// A token stream containing the `stop_all` method implementation.
 fn generate_stop_all_impl(fields: &Punctuated<Field, Comma>) -> proc_macro2::TokenStream {
     let instrumentation = get_default_instrumentation();
-
-    let fields_len = fields.len();
-    let call_create_channels = create_finished_signal_channels_from_amount(fields_len);
-
-    let call_send_stop_message_to_services = fields.iter().map(|field| {
+    let notifiers = fields.iter().map(|field| {
         let field_identifier = field.ident.as_ref().expect("A struct attribute identifier");
-        send_stop_lifecycle_message_over_senders(field_identifier)
+        quote! { self.#field_identifier.service_handle().lifecycle_notifier().clone() }
     });
-
-    let call_recv_finished_signals = await_finished_signal_receivers();
 
     quote! {
         #instrumentation
         async fn stop_all(&mut self) -> Result<(), ::overwatch::overwatch::Error> {
-            #call_create_channels
+            self.stop_all_task().expect("Derived services provide an owned stop task").await
+        }
 
-            #( #call_send_stop_message_to_services )*
-
-            #call_recv_finished_signals
-
-            Ok::<(), ::overwatch::overwatch::Error>(())
+        fn stop_all_task(&self) -> Option<::core::pin::Pin<Box<dyn ::core::future::Future<Output = Result<(), ::overwatch::overwatch::Error>> + Send + 'static>>> {
+            let notifiers: Vec<::overwatch::services::lifecycle::LifecycleNotifier> = vec![ #( #notifiers ),* ];
+            Some(Box::pin(async move {
+                let mut receivers = Vec::with_capacity(notifiers.len());
+                for notifier in notifiers {
+                    let (sender, receiver) = ::overwatch::utils::finished_signal::channel();
+                    notifier.send(::overwatch::services::lifecycle::LifecycleMessage::Stop(sender)).await?;
+                    receivers.push(receiver);
+                }
+                for receiver in receivers {
+                    receiver.await.map_err(|error| {
+                        let dyn_error: ::overwatch::DynError = Box::new(error);
+                        ::overwatch::overwatch::Error::from(dyn_error)
+                    })?;
+                }
+                Ok(())
+            }))
         }
     }
 }

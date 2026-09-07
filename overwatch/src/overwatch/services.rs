@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use futures::future::BoxFuture;
 
 use crate::{
     DynError,
@@ -112,6 +113,22 @@ pub trait Services: Sized {
     ///
     /// The generated [`Error`](enum@Error).
     async fn stop_all(&mut self) -> Result<(), Error>;
+
+    /// Optionally prepare an owned task equivalent to [`Self::stop_all`].
+    ///
+    /// During shutdown the runner can poll this task while serving relay and
+    /// status requests, allowing state operators to complete their work. The
+    /// task must not borrow `self`, and must acknowledge the same service stops
+    /// and preserve the same errors as `stop_all`. It is polled to completion
+    /// before teardown; it is not spawned or detached.
+    ///
+    /// Returning `None` preserves the existing `stop_all` implementation and
+    /// its exclusive access to the services. Derived services provide an owned
+    /// task automatically. Custom implementations may opt in if their stop
+    /// operation permits concurrent relay/status access.
+    fn stop_all_task(&self) -> Option<BoxFuture<'static, Result<(), Error>>> {
+        None
+    }
 
     /// Shuts down the `Service`'s
     /// [`ServiceRunner`](crate::services::runner::ServiceRunner)s attached to
