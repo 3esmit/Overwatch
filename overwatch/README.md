@@ -62,7 +62,7 @@ This crate provides the fundamental building blocks for creating modular, interc
 
 ## 🏗️ Architecture Overview
 
-```
+```text
                     ┌─────────────────────────┐
                     │    OverwatchRunner      │
                     │  ─────────────────────  │
@@ -115,6 +115,14 @@ Every service implements two traits:
 #### 1. `ServiceData` - Define Types
 
 ```rust
+use overwatch::services::{ServiceData, state::{NoOperator, NoState}};
+
+struct MyService;
+type MySettings = ();
+type MyState = NoState<MySettings>;
+type MyOperator = NoOperator<MyState>;
+type MyMessage = ();
+
 impl ServiceData for MyService {
     type Settings = MySettings;      // Configuration
     type State = MyState;            // Persistent state
@@ -125,22 +133,40 @@ impl ServiceData for MyService {
 
 #### 2. `ServiceCore` - Define Behavior
 
+This complete stateless service waits for messages without blocking the runtime:
+
 ```rust
+use async_trait::async_trait;
+use overwatch::{DynError, OpaqueServiceResourcesHandle};
+use overwatch::services::{ServiceCore, ServiceData, state::{NoOperator, NoState}};
+
+type RuntimeServiceId = String;
+
+struct MyService {
+    handle: OpaqueServiceResourcesHandle<Self, RuntimeServiceId>,
+}
+
+impl ServiceData for MyService {
+    type Settings = ();
+    type State = NoState<()>;
+    type StateOperator = NoOperator<Self::State>;
+    type Message = ();
+}
+
 #[async_trait]
 impl ServiceCore<RuntimeServiceId> for MyService {
     fn init(
         handle: OpaqueServiceResourcesHandle<Self, RuntimeServiceId>,
-        initial_state: Self::State,
+        _initial_state: Self::State,
     ) -> Result<Self, DynError> {
-        // Initialize your service
-        Ok(Self { handle, state: initial_state })
+        Ok(Self { handle })
     }
 
-    async fn run(self) -> Result<(), DynError> {
-        // Your service logic runs here
-        loop {
-            // Handle messages, do work, etc.
+    async fn run(mut self) -> Result<(), DynError> {
+        while let Some(()) = self.handle.inbound_relay.recv().await {
+            // Handle the message.
         }
+        Ok(())
     }
 }
 ```
@@ -152,18 +178,30 @@ impl ServiceCore<RuntimeServiceId> for MyService {
 Services communicate via **relays** - type-safe async channels:
 
 ```rust
-// Get a relay to another service
-let other_relay = self.handle
-    .overwatch_handle
-    .relay::<OtherService>()
-    .await?;
+use std::fmt::{Debug, Display};
+use overwatch::{DynError, overwatch::OverwatchHandle};
+use overwatch::services::{AsServiceId, ServiceData, relay::InboundRelay};
 
-// Send a message
-other_relay.send(MyMessage::Hello).await?;
+#[derive(Debug)]
+enum MyMessage { Hello }
 
-// Receive messages
-while let Some(msg) = self.handle.inbound_relay.recv().await {
-    // Handle incoming messages
+async fn exchange<OtherService, RuntimeServiceId>(
+    handle: &OverwatchHandle<RuntimeServiceId>,
+    inbound: &mut InboundRelay<MyMessage>,
+) -> Result<(), DynError>
+where
+    OtherService: ServiceData<Message = MyMessage>,
+    RuntimeServiceId: AsServiceId<OtherService> + Debug + Display + Sync,
+{
+    // Get a relay to another service in the same runtime.
+    let other_relay = handle.relay::<OtherService>().await?;
+    other_relay.send(MyMessage::Hello).await?;
+
+    while let Some(message) = inbound.recv().await {
+        // Handle incoming messages.
+        println!("{message:?}");
+    }
+    Ok(())
 }
 ```
 
@@ -174,26 +212,34 @@ while let Some(msg) = self.handle.inbound_relay.recv().await {
 ### No State (Stateless Services)
 
 ```rust
+use overwatch::services::{ServiceData, state::{NoOperator, NoState}};
+
+struct StatelessService;
+
 impl ServiceData for StatelessService {
+    type Settings = ();
     type State = NoState<Self::Settings>;
     type StateOperator = NoOperator<Self::State>;
-    // ...
+    type Message = ();
 }
 ```
 
 ### With State (Stateful Services)
 
 ```rust
-#[derive(Default, Clone, Serialize, Deserialize)]
+use std::convert::Infallible;
+use overwatch::services::state::ServiceState;
+
+#[derive(Default, Clone)]
 struct MyState {
     counter: u32,
 }
 
 impl ServiceState for MyState {
-    type Settings = MySettings;
-    type Error = MyError;
+    type Settings = ();
+    type Error = Infallible;
     
-    fn from_settings(settings: &Self::Settings) -> Result<Self, Self::Error> {
+    fn from_settings(_settings: &Self::Settings) -> Result<Self, Self::Error> {
         Ok(Self::default())
     }
 }
@@ -201,27 +247,49 @@ impl ServiceState for MyState {
 
 ### State Operators
 
-State operators handle persistence:
+State operators provide loading and snapshot-handling hooks. This minimal
+operator keeps only the latest snapshot in memory; it does not persist across
+restarts. For durable storage, see the
+[ping-pong state operator](https://github.com/logos-co/Overwatch/blob/main/examples/ping_pong/src/operators.rs).
 
 ```rust
+use std::convert::Infallible;
+use async_trait::async_trait;
+use overwatch::overwatch::OverwatchHandle;
+use overwatch::services::state::{ServiceState, StateOperator};
+
+#[derive(Clone, Default)]
+struct MyState { counter: u32 }
+
+impl ServiceState for MyState {
+    type Settings = ();
+    type Error = Infallible;
+
+    fn from_settings(_settings: &()) -> Result<Self, Self::Error> {
+        Ok(Self::default())
+    }
+}
+
+struct MyOperator { last_state: Option<MyState> }
+
 #[async_trait]
 impl<RuntimeServiceId> StateOperator<RuntimeServiceId> for MyOperator {
     type State = MyState;
-    type LoadError = std::io::Error;
+    type LoadError = Infallible;
     
-    fn try_load(settings: &Settings) -> Result<Option<Self::State>, Self::LoadError> {
-        // Load state from disk/database
+    fn try_load(_settings: &()) -> Result<Option<Self::State>, Self::LoadError> {
+        Ok(None) // No durable snapshot: initialize via ServiceState::from_settings.
     }
 
     fn from_settings(
-        settings: &Settings,
-        overwatch_handle: OverwatchHandle<RuntimeServiceId>,
+        _settings: &(),
+        _overwatch_handle: OverwatchHandle<RuntimeServiceId>,
     ) -> Self {
-        // Build the operator from settings and runtime services
+        Self { last_state: None }
     }
     
     async fn run(&mut self, state: Self::State) {
-        // Save state when updated
+        self.last_state = Some(state);
     }
 }
 ```
@@ -233,16 +301,28 @@ impl<RuntimeServiceId> StateOperator<RuntimeServiceId> for MyOperator {
 Control services programmatically:
 
 ```rust
-let handle = app.handle();
+use std::fmt::{Debug, Display};
+use overwatch::overwatch::{Error, Overwatch};
+use overwatch::services::AsServiceId;
 
-// Start all services
-handle.start_all_services().await?;
+async fn manage<MyService, RuntimeServiceId>(
+    app: &Overwatch<RuntimeServiceId>,
+) -> Result<(), Error>
+where
+    RuntimeServiceId: AsServiceId<MyService> + Debug + Display + Sync,
+{
+    let handle = app.handle();
 
-// Stop a specific service
-handle.stop::<MyService>().await?;
+    // Start all services.
+    handle.start_all_services().await?;
 
-// Shutdown everything
-handle.shutdown().await;
+    // Stop a specific service.
+    handle.stop_service::<MyService>().await?;
+
+    // Shut down everything and propagate any failure.
+    handle.shutdown().await?;
+    Ok(())
+}
 ```
 
 ---

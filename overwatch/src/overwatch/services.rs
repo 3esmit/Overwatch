@@ -10,6 +10,14 @@ use crate::{
 ///
 /// An implementor of this trait would have to handle the inner.
 /// [`ServiceCore`](crate::services::ServiceCore).
+#[cfg_attr(
+    feature = "derive",
+    doc = "\nThe [`derive_services`](crate::derive_services) macro generates this implementation."
+)]
+#[cfg_attr(
+    not(feature = "derive"),
+    doc = "\nEnable the `derive` feature to generate this implementation with `#[derive_services]`."
+)]
 #[async_trait]
 pub trait Services: Sized {
     /// Inner [`ServiceCore::Settings`](crate::services::ServiceCore) grouping
@@ -53,7 +61,7 @@ pub trait Services: Sized {
     /// # Implementation Details
     ///
     /// The current implementation of this function (when derived via the
-    /// [`#[derive_services]`](overwatch_derive::derive_services) macro)
+    /// `#[derive_services]` macro)
     /// starts the services sequentially, in the order they are provided in the
     /// `service_ids` slice.
     ///
@@ -68,7 +76,7 @@ pub trait Services: Sized {
     /// # Implementation Details
     ///
     /// The current implementation of this function (when derived via the
-    /// [`#[derive_services]`](overwatch_derive::derive_services) macro)
+    /// `#[derive_services]` macro)
     /// starts all the services sequentially, in the order they are defined
     /// in the implementer's definition.
     ///
@@ -89,7 +97,7 @@ pub trait Services: Sized {
     /// # Implementation Details
     ///
     /// The current implementation of this function (when derived via the
-    /// [`#[derive_services]`](overwatch_derive::derive_services) macro),
+    /// `#[derive_services]` macro),
     /// stops the services sequentially, in the order they are provided in the
     /// `service_ids` slice.
     ///
@@ -103,7 +111,7 @@ pub trait Services: Sized {
     /// # Implementation Details
     ///
     /// The current implementation of this function (when derived via the
-    /// [`#[derive_services]`](overwatch_derive::derive_services) macro)
+    /// `#[derive_services]` macro)
     /// stops all the services sequentially, in the order they are defined
     /// in the implementer's definition.
     ///
@@ -125,7 +133,7 @@ pub trait Services: Sized {
     /// # Implementation Details
     ///
     /// The current implementation of this function (when derived via the
-    /// [`#[derive_services]`](overwatch_derive::derive_services) macro)
+    /// `#[derive_services]` macro)
     /// kills the [`ServiceRunner`](crate::services::runner::ServiceRunner)s
     /// without waiting for their respective `Service`s to finish.
     /// If you want to wait for the `Service`s to finish, you should call

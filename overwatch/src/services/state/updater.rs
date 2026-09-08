@@ -6,7 +6,8 @@ use crate::services::state::Sender;
 
 /// Sender part of the state handling mechanism.
 ///
-/// Update the current state and notifies the [`StateHandle`].
+/// Updates the current state and notifies the
+/// [`StateHandle`](crate::services::state::StateHandle).
 pub struct StateUpdater<State> {
     sender: Arc<Sender<State>>,
 }
@@ -28,9 +29,12 @@ impl<State> StateUpdater<State> {
         Self { sender }
     }
 
-    /// Send a new state and notify the [`StateWatcher`].
+    /// Send a new state and notify the
+    /// [`StateWatcher`](crate::services::state::StateWatcher).
     ///
-    /// `None` values won't be forwarded to the [`StateOperator`].
+    /// When used with a [`StateHandle`](crate::services::state::StateHandle),
+    /// `None` values won't be forwarded to the
+    /// [`StateOperator`](crate::services::state::StateOperator).
     pub fn update(&self, new_state: State) {
         self.sender.send(new_state).unwrap_or_else(|error| {
             error!("Error updating State: {error}");
