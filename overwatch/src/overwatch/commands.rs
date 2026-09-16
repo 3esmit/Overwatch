@@ -91,11 +91,10 @@ pub enum ServiceLifecycleCommand<RuntimeServiceId> {
 pub enum OverwatchManagementCommand<RuntimeServiceId> {
     /// Retrieves the list of all the `Service`s' `RuntimeServiceId`s
     RetrieveServiceIds(ReplyChannel<Vec<RuntimeServiceId>>),
-    /// Shuts down [`Overwatch`](crate::overwatch::Overwatch), sending the
-    /// `finish_runner_signal`
-    /// to [`Overwatch`](crate::overwatch::Overwatch). It's the signal which
-    /// [`Overwatch::wait_finished`](crate::overwatch::Overwatch::wait_finished)
-    /// awaits.
+    /// Shuts down [`Overwatch`](crate::overwatch::Overwatch). The runner sends
+    /// a finish signal over a channel to [`Overwatch`](crate::overwatch::Overwatch),
+    /// and [`Overwatch::wait_finished`](crate::overwatch::Overwatch::wait_finished)
+    /// awaits that signal.
     ///
     /// This message is final: It stops all `Service`s (and their respective
     /// [`ServiceRunner`](crate::services::runner::ServiceRunner)s) so

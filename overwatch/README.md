@@ -270,6 +270,7 @@ impl ServiceState for MyState {
     }
 }
 
+#[derive(Clone, Default)]
 struct MyOperator { last_state: Option<MyState> }
 
 #[async_trait]
