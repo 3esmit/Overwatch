@@ -123,7 +123,12 @@ where
                         }
                     }
                     OverwatchManagementCommand::Shutdown(sender) => {
-                        if let Err(error) = services.stop_all().await {
+                        if let Err(error) = Self::stop_services_with_command_progress(
+                            &mut services,
+                            &mut commands_receiver,
+                        )
+                        .await
+                        {
                             error!(error=?error, "Error stopping all services during teardown.");
                         }
                         if let Err(error) = services.teardown().await {
@@ -146,6 +151,44 @@ where
         finish_signal_sender
             .send(())
             .expect("Overwatch run finish signal to be sent properly");
+    }
+
+    /// Poll an owned stop task while serving recovery requests. Custom
+    /// implementations without an owned task retain their original stop hook.
+    async fn stop_services_with_command_progress(
+        services: &mut ServicesImpl,
+        commands_receiver: &mut Receiver<OverwatchCommand<ServicesImpl::RuntimeServiceId>>,
+    ) -> Result<(), Error> {
+        let Some(mut stopping) = services.stop_all_task() else {
+            return services.stop_all().await;
+        };
+
+        loop {
+            tokio::select! {
+                result = &mut stopping => return result,
+                Some(command) = commands_receiver.recv() => {
+                    match command {
+                        OverwatchCommand::Relay(command) => Self::handle_relay_command(services, command),
+                        OverwatchCommand::Status(command) => Self::handle_status_command(services, command),
+                        OverwatchCommand::OverwatchManagement(
+                            OverwatchManagementCommand::RetrieveServiceIds(reply_channel),
+                        ) => {
+                            if let Err(error) = reply_channel.reply(services.ids()) {
+                                error!(error=?error, "Error replying with service IDs during shutdown.");
+                            }
+                        }
+                        // Shutdown is terminal. Dropping acknowledgements
+                        // reports failure rather than restarting a service or
+                        // recursively waiting for another shutdown.
+                        OverwatchCommand::ServiceLifecycle(_)
+                        | OverwatchCommand::Settings(_)
+                        | OverwatchCommand::OverwatchManagement(
+                            OverwatchManagementCommand::Shutdown(_),
+                        ) => {}
+                    }
+                }
+            }
+        }
     }
 
     /// Handle a [`RelayCommand`].
