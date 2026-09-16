@@ -320,12 +320,12 @@ where
         })
     }
 
-    /// Send a [`ServiceLifecycleCommand::Shutdown`] command to the
+    /// Send an [`OverwatchManagementCommand::Shutdown`] command to the
     /// [`OverwatchRunner`](crate::overwatch::OverwatchRunner).
     ///
-    /// This triggers sending the `finish_runner_signal` to
-    /// [`Overwatch`](crate::overwatch::Overwatch). It's the signal which
-    /// [`Overwatch::wait_finished`](crate::overwatch::Overwatch::blocking_wait_finished)
+    /// This makes the runner send a finish signal over a channel to
+    /// [`Overwatch`](crate::overwatch::Overwatch). It is the signal which
+    /// [`Overwatch::wait_finished`](crate::overwatch::Overwatch::wait_finished)
     /// waits for.
     ///
     /// # Errors

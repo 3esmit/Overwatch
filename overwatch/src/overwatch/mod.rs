@@ -19,7 +19,7 @@ use crate::{overwatch::runtime::OverwatchRuntime, utils::finished_signal};
 pub type AnySettings = Box<dyn Any + Send>;
 
 /// Main Overwatch entity.
-/// It manages the [`Runtime`] and [`OverwatchHandle`].
+/// It manages runtime access and the [`OverwatchHandle`].
 pub struct Overwatch<RuntimeServiceId> {
     runtime: OverwatchRuntime,
     handle: OverwatchHandle<RuntimeServiceId>,
@@ -34,7 +34,7 @@ impl<RuntimeServiceId> Overwatch<RuntimeServiceId> {
         &self.handle
     }
 
-    /// Get the underlying [`Handle`]
+    /// Get the underlying runtime abstraction.
     pub const fn runtime(&self) -> &OverwatchRuntime {
         &self.runtime
     }
